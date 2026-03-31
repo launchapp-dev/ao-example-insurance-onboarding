@@ -1,0 +1,39 @@
+default_workflow_ref: onboard-agent
+
+workflows:
+  - id: onboard-agent
+    name: "Insurance Agent Onboarding"
+    description: "Full onboarding pipeline: application screening, license verification, background check, training assignment, system provisioning, and compliance certification."
+    phases:
+      - screen-application:
+          on_verdict:
+            approved:
+              target: verify-licensing
+            conditional:
+              target: verify-licensing
+            rejected:
+              target: reject-application
+      - verify-licensing
+      - check-background:
+          on_verdict:
+            clear:
+              target: assign-training
+            flagged:
+              target: screen-application
+            disqualified:
+              target: disqualify-applicant
+          max_rework_attempts: 2
+      - assign-training
+      - provision-access
+      - certify-compliance:
+          on_verdict:
+            certified:
+              target: track-onboarding-issue
+            needs-training:
+              target: assign-training
+            failed:
+              target: disqualify-applicant
+          max_rework_attempts: 3
+      - track-onboarding-issue
+      - reject-application
+      - disqualify-applicant

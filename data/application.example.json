@@ -1,0 +1,44 @@
+{
+  "npn": "12345678",
+  "legal_name": "Jane Elizabeth Smith",
+  "dob": "1988-04-15",
+  "ssn_last4": "7291",
+  "address": {
+    "street": "4521 Maple Avenue",
+    "city": "Austin",
+    "state": "TX",
+    "zip": "78701"
+  },
+  "email": "jane.smith@example.com",
+  "phone": "512-555-0182",
+  "role_applied": "Personal Lines Agent",
+  "license_types": ["Property & Casualty"],
+  "lines_of_authority": ["Property", "Casualty", "Personal Lines"],
+  "resident_state": "TX",
+  "non_resident_states": ["OK", "NM", "LA"],
+  "eo_insurance": {
+    "carrier": "Chubb",
+    "policy_number": "EO-2024-78291",
+    "effective_date": "2024-01-01",
+    "expiration_date": "2025-01-01",
+    "limit": 1000000
+  },
+  "self_disclosures": {
+    "regulatory_actions": false,
+    "felony_conviction": false,
+    "misdemeanor_conviction": false,
+    "bankruptcy": false,
+    "prior_terminations": false,
+    "details": ""
+  },
+  "prior_appointments": [
+    {"carrier": "State Farm", "state": "TX", "years": "2019-2023"},
+    {"carrier": "Allstate", "state": "TX", "years": "2017-2019"}
+  ],
+  "references": [
+    {"name": "Robert Chen", "title": "Agency Principal, Chen Insurance Group", "phone": "512-555-0199"},
+    {"name": "Maria Lopez", "title": "Sales Manager, State Farm Austin", "phone": "512-555-0143"}
+  ],
+  "application_date": "2026-03-15",
+  "signature_date": "2026-03-15"
+}

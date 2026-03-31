@@ -1,0 +1,238 @@
+phases:
+  screen-application:
+    mode: agent
+    agent: application-screener
+    directive: |
+      Screen the incoming agent application for completeness and basic eligibility.
+
+      Read the raw application from data/application.json.
+
+      Check for:
+      - All required fields present (NPN, legal name, DOB, SSN last-4, address)
+      - Valid license type for the role applied for
+      - E&O insurance documentation present and not expired
+      - Self-disclosures noted
+
+      Write your structured screening report to data/screening-report.json.
+
+      Return a decision:
+      - "approved" — application is complete and clean, proceed to license verification
+      - "conditional" — minor gaps that can be remedied; list what's needed
+      - "rejected" — missing NPN, expired E&O, multiple regulatory self-disclosures
+
+      Your output must include verdict, npn, applicant_name, missing_items, and screening_notes.
+    capabilities:
+      mutates_state: true
+      writes_files: true
+      requires_commit: false
+    decision_contract:
+      required_fields: [verdict, reasoning]
+
+  verify-licensing:
+    mode: agent
+    agent: license-verifier
+    directive: |
+      Verify the agent's licensing credentials using the screening report.
+
+      Read data/screening-report.json for the NPN and claimed licenses.
+
+      Simulate NIPR lookup by reading data/nipr-data.json if it exists,
+      or construct a realistic verification based on the application data.
+
+      Check:
+      - NPN validity and name match
+      - License active status in each relevant state
+      - Lines of authority match what was claimed
+      - CE credits current
+      - Any regulatory actions on record
+
+      Write verification results to data/license-verification.json.
+
+      This phase does not make a workflow decision — it writes data and advances.
+    capabilities:
+      mutates_state: true
+      writes_files: true
+      requires_commit: false
+
+  check-background:
+    mode: agent
+    agent: background-checker
+    directive: |
+      Review the background check results for the applicant.
+
+      Read data/background-check-raw.json for the raw background check data.
+      Read data/screening-report.json for self-disclosures to cross-reference.
+
+      Evaluate:
+      - Criminal history (felonies = automatic disqualification)
+      - Credit report red flags
+      - FINRA BrokerCheck disclosures
+      - Prior carrier terminations
+      - OFAC screening result
+
+      Write your structured assessment to data/background-assessment.json.
+
+      Return a decision:
+      - "clear" — no disqualifying factors, proceed to training assignment
+      - "flagged" — items need human review before proceeding; describe what needs review
+      - "disqualified" — hard disqualifying factors found (e.g., felony conviction)
+    capabilities:
+      mutates_state: true
+      writes_files: true
+      requires_commit: false
+    decision_contract:
+      required_fields: [verdict, reasoning]
+
+  assign-training:
+    mode: agent
+    agent: training-coordinator
+    directive: |
+      Create a personalized training plan for the agent based on their role and lines of authority.
+
+      Read data/license-verification.json for lines of authority and states.
+      Read data/screening-report.json for the agent's role.
+
+      Assign:
+      - Mandatory compliance training (all agents)
+      - Product training modules for each line of authority
+      - Carrier certification requirements
+      - State-specific CE or appointment training if needed
+
+      Write the training plan to data/training-plan.json with all module IDs,
+      estimated hours, required dates, and carrier certifications.
+
+      Track training completion by reading data/training-completion.json.
+      If training-completion.json does not exist yet, just write the plan and advance.
+    capabilities:
+      mutates_state: true
+      writes_files: true
+      requires_commit: false
+
+  provision-access:
+    mode: agent
+    agent: provisioner
+    directive: |
+      Provision all required system access for the new agent.
+
+      Read data/screening-report.json and data/license-verification.json
+      to determine what systems this agent needs.
+
+      Generate a provisioning record documenting:
+      - AMS/agency management system access (always required)
+      - CRM access (always required)
+      - Carrier portal access (based on appointed lines)
+      - Quoting tools (based on lines of authority)
+      - Email and calendar
+      - E-signature platform
+      - Compliance training platform
+
+      Write the complete provisioning record to data/provisioning-record.json.
+      Note any items requiring manual admin action in pending_actions.
+    capabilities:
+      mutates_state: true
+      writes_files: true
+      requires_commit: false
+
+  certify-compliance:
+    mode: agent
+    agent: compliance-certifier
+    directive: |
+      Issue the final compliance certification and appointment letter.
+
+      Verify all prerequisites are complete:
+      1. data/license-verification.json exists with verification_verdict = "verified"
+      2. data/background-assessment.json exists with verdict = "clear"
+      3. data/training-plan.json exists (training assigned)
+      4. data/provisioning-record.json exists
+
+      If any prerequisite is missing or failed, return verdict "needs-training"
+      or "failed" as appropriate with a clear explanation.
+
+      If all prerequisites are met:
+      - Generate compliance-certificate.json in documents/
+      - Generate appointment-letter.md in documents/ (formal, professional tone)
+      - List carriers to be appointed and filing deadlines
+
+      Return a decision:
+      - "certified" — all prerequisites met, agent is cleared for appointment
+      - "needs-training" — training not yet complete; specify which modules are outstanding
+      - "failed" — a prerequisite check revealed a disqualifying issue
+    capabilities:
+      mutates_state: true
+      writes_files: true
+      requires_commit: false
+    decision_contract:
+      required_fields: [verdict, reasoning]
+
+  track-onboarding-issue:
+    mode: agent
+    agent: compliance-certifier
+    directive: |
+      Create a GitHub issue to track this agent's onboarding completion status.
+
+      Read data/screening-report.json for agent name and NPN.
+      Read documents/compliance-certificate.json for certification details.
+      Read data/provisioning-record.json for pending actions.
+
+      Create a GitHub issue in the tracking repository with:
+      - Title: "Agent Onboarding: [Agent Name] (NPN: [NPN])"
+      - Body: structured checklist of all onboarding steps with completion status
+      - Labels: "onboarding", "insurance-agent"
+      - List any pending_actions from the provisioning record as open checklist items
+
+      This issue serves as the permanent onboarding record for agency principals
+      and compliance review.
+
+      Write a summary of the created issue to logs/onboarding-issue.json.
+    capabilities:
+      mutates_state: true
+      writes_files: true
+      requires_commit: false
+
+  reject-application:
+    mode: command
+    command:
+      program: bash
+      args:
+        - "-c"
+        - |
+          echo "Application rejected for: {{subject_title}}" && \
+          python3 -c "
+          import json, datetime, os
+          report = json.load(open('data/screening-report.json')) if os.path.exists('data/screening-report.json') else {}
+          result = {
+            'status': 'rejected',
+            'timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
+            'applicant': report.get('applicant_name', 'Unknown'),
+            'reason': 'Application did not meet minimum eligibility requirements. See screening-report.json for details.'
+          }
+          os.makedirs('documents', exist_ok=True)
+          json.dump(result, open('documents/rejection-notice.json', 'w'), indent=2)
+          print('Rejection notice written to documents/rejection-notice.json')
+          "
+      cwd_mode: task_root
+      timeout_secs: 30
+
+  disqualify-applicant:
+    mode: command
+    command:
+      program: bash
+      args:
+        - "-c"
+        - |
+          echo "Applicant disqualified for: {{subject_title}}" && \
+          python3 -c "
+          import json, datetime, os
+          bg = json.load(open('data/background-assessment.json')) if os.path.exists('data/background-assessment.json') else {}
+          result = {
+            'status': 'disqualified',
+            'timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
+            'disqualifying_factors': bg.get('disqualifying_factors', []),
+            'reason': 'Applicant did not pass background screening. Cannot be appointed per regulatory requirements.'
+          }
+          os.makedirs('documents', exist_ok=True)
+          json.dump(result, open('documents/disqualification-notice.json', 'w'), indent=2)
+          print('Disqualification notice written to documents/disqualification-notice.json')
+          "
+      cwd_mode: task_root
+      timeout_secs: 30
